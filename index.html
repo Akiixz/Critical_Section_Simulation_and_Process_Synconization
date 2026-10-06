@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>critical-section --demo v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div><span class="prompt">sim@oslab</span>:~$ <span class="cmd">critical-section --demo</span></div>
+    <div class="ver">v2 · visual</div>
+  </div>
+
+  <h1>Critical Section &amp; Process Synchronization</h1>
+  <p class="lede">
+    จำลองปัญหา Race Condition และวิธีแก้ด้วย Mutex Lock / Semaphore แบบ <b>เทียบสองฝั่งพร้อมกัน</b>
+    — ใช้ <code>async/await</code> แทรกจุดสลับงาน (yield point) เพื่อเลียนแบบการสลับ thread ของจริง
+    ปรับความเร็วหรือกดหยุดชั่วคราวเพื่ออธิบายทีละขั้นได้
+  </p>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="counter">01 · shared-counter.sim</button>
+    <button class="tab-btn" data-tab="pc">02 · producer-consumer.sim</button>
+  </nav>
+
+  <!-- ====================== TAB 1 : SHARED COUNTER ====================== -->
+  <section class="tab-panel active" id="tab-counter" data-mode="visual">
+
+    <div class="panel">
+      <div class="panel-head"><span>config</span><span class="timer" id="c-timer">⏱ 0.0s</span></div>
+      <div class="panel-body controls">
+        <div class="field">
+          <label>โหมด</label>
+          <div class="seg" data-seg="mode">
+            <button class="on" data-v="visual" data-lock-on-run title="ช้า เห็นทุกขั้น มีอนิเมชันข้อมูลวิ่ง">🎬 Visual</button>
+            <button data-v="stress" data-lock-on-run title="เร็ว ตัวเลขเยอะ ดูผลรวมตอนจบ">⚡ Stress test</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>threads</label>
+          <input type="number" id="c-threads" value="5" min="2" max="8" data-lock-on-run>
+        </div>
+        <div class="field">
+          <label id="c-n-label">รอบ / thread</label>
+          <input type="number" id="c-n" value="2" min="1" max="6" data-lock-on-run>
+        </div>
+        <div class="field" data-only="visual">
+          <label>ความเร็ว <b id="c-speed-val">1.5×</b></label>
+          <input type="range" id="c-speed" min="0.5" max="3" step="0.25" value="1.5">
+        </div>
+        <div class="field">
+          <label>แสดงผล</label>
+          <div class="seg" data-seg="view">
+            <button class="on" data-v="both">เทียบ 2 ฝั่ง</button>
+            <button data-v="nosync">❌ ไม่มี Lock</button>
+            <button data-v="sync">✅ มี Lock</button>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div class="btns">
+          <button class="btn btn-ghost" data-act="reset">↺ reset</button>
+          <button class="btn btn-ghost" data-act="pause" data-only="visual" disabled>⏸ pause</button>
+          <button class="btn btn-primary" data-act="run">▶ run</button>
+        </div>
+      </div>
+    </div>
+
+    <details class="howto" open>
+      <summary>วิธีอ่านภาพ (กดเพื่อซ่อน/แสดง)</summary>
+      <ul>
+        <li>ทุก Thread วนทำงาน 3 ขั้น: <b>READ</b> (อ่านค่า Counter เก็บไว้ใน reg ของตัวเอง) → <b>+1</b> (คำนวณ) → <b>WRITE</b> (เขียนค่ากลับเข้า Counter)</li>
+        <li>ลูกกลมสีน้ำเงิน = ค่าที่ <b>อ่าน</b> ออกมา · ลูกกลมสีเขียว = ค่าที่ <b>เขียน</b> กลับไป</li>
+        <li>ถ้า Thread เขียนทับค่าที่คนอื่นเพิ่งแก้ → Counter กระพริบ <b style="color:var(--red)">แดง</b> และมีเลข −N ลอยขึ้น = <b>Lost Update</b></li>
+        <li>แถบ <b>Timeline</b> ด้านล่าง: ช่องสีส้ม = อยู่ใน Critical Section · แถบแดงโปร่งใส = มีหลาย Thread อยู่ใน CS พร้อมกัน (สิ่งที่ห้ามเกิด) · ฝั่งที่มี Lock จะเรียงต่อกันทีละคน</li>
+        <li>เปรียบเทียบ <b>เวลาที่ใช้</b> ของสองฝั่งด้วย — ฝั่งที่มี Lock ถูกต้องแต่ช้ากว่า (Trade-off)</li>
+      </ul>
+    </details>
+
+    <div class="stages" id="c-stages" data-view="both"></div>
+  </section>
+
+  <!-- ====================== TAB 2 : PRODUCER / CONSUMER ====================== -->
+  <section class="tab-panel" id="tab-pc">
+
+    <div class="panel">
+      <div class="panel-head"><span>config</span><span class="timer" id="p-timer">⏱ 0:00 / 0:30</span></div>
+      <div class="panel-body controls">
+        <div class="field">
+          <label>buffer size</label>
+          <input type="number" id="p-size" value="6" min="2" max="10" data-lock-on-run>
+        </div>
+        <div class="field">
+          <label>producers</label>
+          <input type="number" id="p-np" value="2" min="1" max="4" data-lock-on-run>
+        </div>
+        <div class="field">
+          <label>consumers</label>
+          <input type="number" id="p-nc" value="2" min="1" max="4" data-lock-on-run>
+        </div>
+        <div class="field">
+          <label>สถานการณ์</label>
+          <select id="p-scen" data-lock-on-run>
+            <option value="pfast">Producer เร็วกว่า (ถาดจะเต็ม)</option>
+            <option value="cfast">Consumer เร็วกว่า (ถาดจะว่าง)</option>
+            <option value="even">เร็วเท่ากัน (สมดุล)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>ความเร็ว <b id="p-speed-val">1.5×</b></label>
+          <input type="range" id="p-speed" min="0.5" max="3" step="0.25" value="1.5">
+        </div>
+        <label class="toggle" title="หยุดอัตโนมัติเมื่อครบ 30 วินาที (ตรงกับสไลด์ Results)">
+          <input type="checkbox" id="p-auto" checked data-lock-on-run>
+          <span class="switch"></span>
+          <span class="toggle-label">หยุดเองที่ 30 วินาที</span>
+        </label>
+        <div class="field">
+          <label>แสดงผล</label>
+          <div class="seg" data-seg="view">
+            <button class="on" data-v="both">เทียบ 2 ฝั่ง</button>
+            <button data-v="nosync">❌ ไม่มี Semaphore</button>
+            <button data-v="sync">✅ มี Semaphore</button>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div class="btns">
+          <button class="btn btn-ghost" data-act="reset">↺ reset</button>
+          <button class="btn btn-ghost" data-act="pause" disabled>⏸ pause</button>
+          <button class="btn btn-danger" data-act="stop" disabled>■ stop</button>
+          <button class="btn btn-primary" data-act="run">▶ run</button>
+        </div>
+      </div>
+    </div>
+
+    <details class="howto" open>
+      <summary>วิธีอ่านภาพ (กดเพื่อซ่อน/แสดง)</summary>
+      <ul>
+        <li>🥐 บินจาก <b>Producer</b> (ด้านบน) ลงไปวางในช่องของ <b>ถาด / Buffer</b> แล้ว <b>Consumer</b> (ด้านล่าง) มาหยิบไป</li>
+        <li><b>empty</b> = จำนวนที่ว่างเหลือในถาด · <b>full</b> = จำนวนของที่พร้อมให้หยิบ — สองตัวนี้คือ <b>Semaphore</b> · <b>mutex</b> = กุญแจให้เข้าแตะถาดได้ทีละ 1 คน</li>
+        <li>การ์ดกะพริบแดง ⏸ = กำลัง <b>รอ</b> (ถาดเต็มหรือว่าง) — ฝั่งที่มี Semaphore เป็นพฤติกรรมที่ถูกต้อง</li>
+        <li>ช่องแดงเส้นประ = <b>Overflow</b> (ของล้นถาด) · การ์ด Consumer สั่นแดง = <b>Underflow</b> (หยิบจากถาดว่าง หรือโดนคนอื่นหยิบตัดหน้า)</li>
+      </ul>
+    </details>
+
+    <div class="stages" id="p-stages" data-view="both"></div>
+  </section>
+
+  <!-- ====================== RUN HISTORY ====================== -->
+  <div class="panel" style="margin-top:22px">
+    <div class="panel-head">
+      <span>📋 บันทึกผลการรัน (ใช้ตัวเลขจริงจากตรงนี้ไปใส่สไลด์/รายงาน)</span>
+      <span class="hist-actions">
+        <span class="msg" id="hist-msg"></span>
+        <button class="btn btn-ghost btn-sm" id="hist-copy">คัดลอก CSV</button>
+        <button class="btn btn-ghost btn-sm" id="hist-clear">ล้าง</button>
+      </span>
+    </div>
+    <div class="hist-wrap">
+      <table class="hist">
+        <thead>
+          <tr><th>เวลา</th><th>การจำลอง</th><th>โหมด</th><th>ตั้งค่า</th><th>ผลลัพธ์</th><th>ใช้เวลา</th><th>สถานะ</th></tr>
+        </thead>
+        <tbody id="hist-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    rendered client-side · no data leaves your browser ·
+    ปุ่มลัด: <kbd>Space</kbd> run / pause · <kbd>R</kbd> reset
+  </footer>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
